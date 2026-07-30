@@ -49,9 +49,8 @@ flowchart LR
     W -- "opt-in, last resort" --> D["Full Xray restart<br/>via panel"]
 ```
 
-*(GitHub renders the block above as a diagram automatically. If you're
-viewing this somewhere that doesn't support Mermaid, see the plain-English
-list of the same flow just below.)*
+> **Note**
+> If Mermaid diagrams aren't supported in your viewer, a text version of the workflow is provided below.
 
 Every poll cycle, the watchdog independently evaluates each client against
 the same rule 3x-ui itself uses (`total > 0 && used >= total`, or
