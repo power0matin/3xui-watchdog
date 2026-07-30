@@ -49,8 +49,9 @@ flowchart LR
     W -- "opt-in, last resort" --> D["Full Xray restart<br/>via panel"]
 ```
 
-> **Note**
-> If Mermaid diagrams aren't supported in your viewer, a text version of the workflow is provided below.
+*(GitHub renders the block above as a diagram automatically. If you're
+viewing this somewhere that doesn't support Mermaid, see the plain-English
+list of the same flow just below.)*
 
 Every poll cycle, the watchdog independently evaluates each client against
 the same rule 3x-ui itself uses (`total > 0 && used >= total`, or
@@ -73,6 +74,34 @@ failure mode this tool exists to avoid.
 
 ## Quick start
 
+### One-line install (recommended for a VPS)
+
+Mirrors 3x-ui's own installer UX — handles OS package detection, an isolated
+virtualenv (no `--break-system-packages` needed), a dedicated system user,
+and the systemd service, all in one step:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/power0matin/3xui-watchdog/main/install.sh)
+```
+
+Then edit `/etc/3xui-watchdog/config.yaml` with your panel URL/credentials
+and Xray gRPC host:port, and start it:
+
+```bash
+sudo systemctl start 3xui-watchdog
+sudo journalctl -u 3xui-watchdog -f
+```
+
+Safe to re-run any time (updates the code/venv in place, never touches an
+existing `config.yaml`). To uninstall:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/power0matin/3xui-watchdog/main/install.sh) --uninstall
+```
+
+See `install.sh --help` for flags (custom install path, skipping the
+systemd unit for Docker/cron setups, pinning a specific release, etc).
+
 ### Docker
 
 ```bash
@@ -87,7 +116,7 @@ docker run -d --name 3xui-watchdog \
 
 Or with Compose — see [`docker-compose.example.yml`](docker-compose.example.yml).
 
-### systemd
+### Manual systemd (if you'd rather not use install.sh)
 
 ```bash
 pip install "3xui-watchdog[grpc]" --break-system-packages
@@ -211,7 +240,7 @@ initial version:
       gRPC enforcement path end-to-end
 - [ ] Go implementation using `github.com/mhsanaei/3x-ui/v2/xray`
 - [ ] Record and add the demo GIF
-- [ ] `curl | bash` one-line installer mirroring 3x-ui's own installer UX
+- [x] `curl | bash` one-line installer mirroring 3x-ui's own installer UX — see `install.sh`
 - [ ] Webhook payload schema versioning + a couple of ready-made
       integrations (Discord, Slack formatting presets)
 - [ ] Metrics endpoint (Prometheus) alongside the webhook/Telegram
