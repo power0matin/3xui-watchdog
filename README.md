@@ -41,23 +41,17 @@ Xray required.
 
 ## How it works
 
+```mermaid
+flowchart LR
+    A["3x-ui REST API"] -- "poll every 10s<br/>clients + usage" --> W["3xui-watchdog<br/>evaluate quota / expiry per client"]
+    W -- "RemoveUser()<br/>(preferred)" --> B["Xray-core gRPC API"]
+    W -- "fallback only" --> C["3x-ui REST<br/>disable-client"]
+    W -- "opt-in, last resort" --> D["Full Xray restart<br/>via panel"]
 ```
- ┌─────────────┐   poll (10s)   ┌──────────────────┐
- │  3x-ui REST  │◄───────────────│                  │
- │     API      │────────────────▶  3xui-watchdog   │
- └─────────────┘  clients+usage  │  (this daemon)   │
-                                  │                  │
- ┌─────────────┐  RemoveUser()   │  policy.py:       │
- │  Xray-core   │◄────────────────│  evaluate quota/  │
- │  gRPC API    │  (preferred)    │  expiry per client │
- └─────────────┘                  └──────────────────┘
-                                          │
-                                          ▼ fallback only
-                                  3x-ui REST disable-client
-                                          │
-                                          ▼ opt-in, last resort
-                                  full Xray restart via panel
-```
+
+*(GitHub renders the block above as a diagram automatically. If you're
+viewing this somewhere that doesn't support Mermaid, see the plain-English
+list of the same flow just below.)*
 
 Every poll cycle, the watchdog independently evaluates each client against
 the same rule 3x-ui itself uses (`total > 0 && used >= total`, or
