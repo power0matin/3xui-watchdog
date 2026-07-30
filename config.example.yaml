@@ -1,0 +1,40 @@
+# 3xui-watchdog configuration
+# Copy to config.yaml and edit, or override any key with an env var:
+#   XUIWD_<SECTION>__<KEY>=value   e.g. XUIWD_PANEL__PASSWORD=hunter2
+# Env vars always win over this file.
+
+poll_interval_seconds: 10   # matches 3x-ui's own internal check interval
+once: false                 # true / --once flag = single pass, for cron
+dry_run: false               # true / --dry-run = log actions only, take none
+log_level: INFO
+log_json: false              # true for structured JSON logs (good for log shippers)
+
+panel:
+  base_url: "http://127.0.0.1:2053"
+  # auth_mode: "password" (session-cookie login, works on all tested versions)
+  #         or "token"    (static API token, only on panel versions that expose one)
+  auth_mode: "password"
+  username: "admin"
+  password: "CHANGE_ME"
+  api_token: null
+  verify_tls: true            # set false only for self-signed panel certs on a trusted LAN
+
+xray_grpc:
+  # Direct Xray-core gRPC API. This is the PREFERRED enforcement path
+  # (surgical RemoveUser, no restart). Requires the API inbound to be
+  # enabled in Xray's config (3x-ui: Panel Settings -> Xray Configs -> API).
+  enabled: true
+  host: "127.0.0.1"
+  port: 10085
+
+restart_fallback:
+  # The "nuclear option" — full Xray restart via the panel, only used if
+  # BOTH the gRPC path and the REST API disable both fail, and only after
+  # this grace period. Disconnects EVERY user on the server. Off by default.
+  enabled: false
+  grace_period_seconds: 120
+
+notify:
+  webhook_url: null            # e.g. "https://your-server/hooks/watchdog"
+  telegram_bot_token: null
+  telegram_chat_id: null

@@ -1,0 +1,28 @@
+[Unit]
+Description=3xui-watchdog — real-time traffic & expiry enforcement for 3X-UI/Xray-core
+After=network-online.target x-ui.service
+Wants=network-online.target
+# Not a Requires= on x-ui.service on purpose: the watchdog should keep
+# running (and keep trying to reconnect) even if the panel bounces.
+
+[Service]
+Type=simple
+User=xui-watchdog
+Group=xui-watchdog
+WorkingDirectory=/etc/3xui-watchdog
+ExecStart=/usr/local/bin/xui-watchdog --config /etc/3xui-watchdog/config.yaml
+Restart=on-failure
+RestartSec=5s
+
+# Hardening — this service holds panel credentials/tokens, treat it like
+# any other credentialed daemon.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/etc/3xui-watchdog
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

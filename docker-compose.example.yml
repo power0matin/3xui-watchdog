@@ -1,0 +1,26 @@
+# Example: 3xui-watchdog running alongside an existing 3x-ui + Xray stack.
+# This does NOT stand up 3x-ui itself — it assumes you already have it
+# running (as its own container, or on the host) and just points the
+# watchdog at it. Adjust panel_base_url / xray_grpc host+port in
+# config.yaml to match how your existing stack is networked.
+
+services:
+  3xui-watchdog:
+    image: ghcr.io/power0matin/3xui-watchdog:latest
+    # Or build locally instead of pulling:
+    # build: .
+    container_name: 3xui-watchdog
+    restart: unless-stopped
+    network_mode: "host"   # simplest option when 3x-ui/Xray also run on the host;
+                           # use a shared user-defined network instead if they're
+                           # in their own containers (see README "Docker networking" note)
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      # Secrets can also be supplied here instead of in config.yaml:
+      - XUIWD_PANEL__PASSWORD=${PANEL_PASSWORD:?set PANEL_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "xui-watchdog"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package + dev deps
+        run: pip install -e ".[dev,grpc]"
+
+      - name: Lint (ruff)
+        run: ruff check src tests
+
+      - name: Type-check (mypy)
+        run: mypy src
+
+      - name: Unit tests (pytest)
+        run: pytest -v tests/ --ignore=tests/integration
+
+  docker-build:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push on PRs)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: 3xui-watchdog:ci
+
+  # Integration test against a real 3x-ui + Xray stack. Kept as a separate,
+  # slower job so PR feedback from lint-and-test stays fast. Requires the
+  # docker-compose stack under tests/integration/ (see README "Testing"
+  # section) — bringing a full panel + Xray core up in CI is the only
+  # reliable way to test the gRPC RemoveUser / REST disable paths end to
+  # end rather than just mocking them.
+  integration:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start test stack (3x-ui + Xray)
+        run: docker compose -f tests/integration/docker-compose.ci.yml up -d --wait
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e ".[dev,grpc]"
+
+      - name: Run integration tests
+        run: pytest -v tests/integration/ -m integration
+
+      - name: Tear down test stack
+        if: always()
+        run: docker compose -f tests/integration/docker-compose.ci.yml down -v
+
+  publish:
+    needs: [lint-and-test, docker-build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist/wheel
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          pip install twine
+          twine upload dist/*
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}

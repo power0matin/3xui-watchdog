@@ -1,0 +1,27 @@
+# Brings up a real 3x-ui + Xray-core instance for the CI "integration" job
+# (see .github/workflows/ci.yml). This is intentionally separate from
+# docker-compose.example.yml at the repo root, which is the *user-facing*
+# "run the watchdog against your own existing stack" example — this file
+# is only the throwaway stack CI tests against.
+#
+# NOTE: pin the 3x-ui image tag to whatever version this release of
+# 3xui-watchdog was tested against (see the compatibility table in
+# README.md) rather than `:latest`, so CI doesn't silently start failing
+# when upstream ships a breaking panel API change.
+services:
+  x-ui:
+    image: ghcr.io/mhsanaei/3x-ui:v2.5.4
+    container_name: xui-watchdog-ci-panel
+    ports:
+      - "2053:2053"   # panel web UI / REST API
+      - "10085:10085" # Xray API inbound (gRPC) — must be enabled in the
+                      # panel's Xray Configs -> API settings for the
+                      # watchdog's preferred gRPC RemoveUser path to work
+    environment:
+      XUI_USERNAME: admin
+      XUI_PASSWORD: admin_ci_only
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2053/login"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
