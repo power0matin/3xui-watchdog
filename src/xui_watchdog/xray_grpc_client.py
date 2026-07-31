@@ -54,8 +54,11 @@ except ImportError:  # pragma: no cover
     grpc = None  # type: ignore[assignment]
 
 try:
-    # Generated per the docstring above. Not vendored in this scaffold.
-    from . import _xray_pb2  # type: ignore[attr-defined]
+    # Generated per the docstring above. Not vendored in this scaffold, so
+    # this import genuinely fails until the protoc step is run — mypy flags
+    # it as a missing module (not a missing attribute), hence
+    # import-not-found rather than attr-defined here.
+    from . import _xray_pb2  # type: ignore[import-not-found]
 
     _STUBS_AVAILABLE = True
 except ImportError:  # pragma: no cover

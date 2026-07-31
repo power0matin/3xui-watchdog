@@ -45,7 +45,13 @@ where = ["src"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-warn_unused_ignores = true
+# NOTE: intentionally not enabling warn_unused_ignores. Whether
+# ignore_missing_imports already covers the conditional `_xray_pb2`/`grpc`
+# imports in xray_grpc_client.py (making their inline `# type: ignore[...]`
+# comments redundant) depends on mypy-version-specific behavior around
+# try/except ImportError blocks. Turning this on would make that ambiguity
+# a hard CI failure instead of a harmless no-op; revisit once CI is
+# actually green against a real mypy run and the exact codes are confirmed.
 
 [tool.ruff]
 line-length = 100
