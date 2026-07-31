@@ -24,7 +24,6 @@ classifiers = [
 dependencies = [
     "httpx>=0.27",
     "PyYAML>=6.0",
-    "grpcio>=1.60; extra == 'grpc'",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +55,17 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Pinned explicitly rather than relying on ruff's default rule set: ruff
+# 0.16.0 (2026-07-23) expanded its defaults from 59 rules to 413, which
+# silently changed what CI enforced under our unpinned `ruff>=0.4` dev
+# dependency and broke CI without any change to our code. E4/E7/E9/F is
+# ruff's own pre-0.16 default and is what this codebase has been verified
+# against. Broadening this deliberately (docstring rules, exception-message
+# style, etc.) is a good follow-up, but should be its own reviewed change,
+# not something that arrives for free on the next `pip install -e .[dev]`.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 markers = [
