@@ -30,7 +30,7 @@ async def test_login_succeeds_against_live_panel() -> None:
         base_url=PANEL_URL,
         auth_mode="password",
         username=os.environ.get("XUIWD_TEST_PANEL_USER", "admin"),
-        password=os.environ.get("XUIWD_TEST_PANEL_PASS", "admin_ci_only"),
+        password=os.environ.get("XUIWD_TEST_PANEL_PASS", "admin"),
     )
     async with PanelClient(config) as panel:
         assert panel._authenticated is True
@@ -42,7 +42,7 @@ async def test_list_client_states_returns_a_list() -> None:
         base_url=PANEL_URL,
         auth_mode="password",
         username=os.environ.get("XUIWD_TEST_PANEL_USER", "admin"),
-        password=os.environ.get("XUIWD_TEST_PANEL_PASS", "admin_ci_only"),
+        password=os.environ.get("XUIWD_TEST_PANEL_PASS", "admin"),
     )
     async with PanelClient(config) as panel:
         states = await panel.list_client_states()
