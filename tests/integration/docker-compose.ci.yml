@@ -21,7 +21,7 @@ services:
       XUI_USERNAME: admin
       XUI_PASSWORD: admin_ci_only
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2053/login"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2053/"]
       interval: 5s
       timeout: 3s
       retries: 20
