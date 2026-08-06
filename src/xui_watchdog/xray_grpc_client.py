@@ -46,8 +46,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from . import _xray_pb2  # type: ignore[attr-defined]
-
 logger = logging.getLogger("xui_watchdog.xray_grpc_client")
 
 try:
@@ -57,10 +55,10 @@ except ImportError:  # pragma: no cover
 
 try:
     # Generated per the docstring above. Not vendored in this scaffold, so
-    # this import genuinely fails until the protoc step is run — mypy flags
-    # it as a missing module (not a missing attribute), hence
-    # import-not-found rather than attr-defined here.
-    from . import _xray_pb2  # type: ignore[import-not-found]
+    # this import genuinely fails until the protoc step is run. Because this
+    # is a relative package import, mypy reports the absent generated module
+    # as attr-defined rather than import-not-found.
+    from . import _xray_pb2  # type: ignore[attr-defined]
 
     _STUBS_AVAILABLE = True
 except ImportError:  # pragma: no cover
