@@ -46,6 +46,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from . import _xray_pb2  # type: ignore[attr-defined]
+
 logger = logging.getLogger("xui_watchdog.xray_grpc_client")
 
 try:
@@ -179,7 +181,9 @@ class XrayGRPCClient:
         if self._stats_stub is None:
             raise XrayGRPCUnavailable("not connected — call connect() first")
         req = _xray_pb2.GetInboundUsersCountRequest(tag=inbound_tag)  # type: ignore[union-attr]
-        resp = self._handler_stub.GetInboundUsers(req, timeout=self.config.call_timeout_seconds)
+        resp = self._handler_stub.GetInboundUsers(
+            req, timeout=self.config.call_timeout_seconds
+        )
         return list(getattr(resp, "emails", []))
 
 
