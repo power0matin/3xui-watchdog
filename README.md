@@ -10,6 +10,8 @@
 </p>
 <!-- repo-badges:end -->
 
+> **Official project page:** [matinshahabadi.ir/projects/3xui-watchdog/](https://matinshahabadi.ir/projects/3xui-watchdog/)
+
 <!--
   docs/screenshots/demo.gif goes here, above the fold. Not included in this
   scaffold — record a real 15-20s terminal capture (asciinema -> gif, or
