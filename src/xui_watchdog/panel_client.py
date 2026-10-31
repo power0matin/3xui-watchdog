@@ -150,13 +150,15 @@ class PanelClient:
                 client_id = _client_identifier(client_settings, protocol)
                 stat = client_stats.get(str(email), {})
 
+                total_raw = client_settings.get("totalGB")
+                if total_raw in (None, "", 0, "0"):
+                    total_raw = stat.get("total")
+
                 states.append(
                     ClientState(
                         email=str(email),
                         inbound_tag=tag,
-                        total=_as_int(
-                            client_settings.get("totalGB"), default=_as_int(stat.get("total"))
-                        ),
+                        total=_as_int(total_raw),
                         up=_as_int(stat.get("up")),
                         down=_as_int(stat.get("down")),
                         expiry_time_ms=_as_int(client_settings.get("expiryTime")),
