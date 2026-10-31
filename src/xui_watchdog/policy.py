@@ -72,7 +72,7 @@ def is_expired(expiry_time_ms: int, now_ms: int | None = None) -> bool:
         return False
     if now_ms is None:
         now_ms = int(time.time() * 1000)
-    return now_ms > expiry_time_ms
+    return now_ms >= expiry_time_ms
 
 
 def evaluate_client(client: ClientState, now_ms: int | None = None) -> Verdict:
@@ -98,8 +98,8 @@ def evaluate_client(client: ClientState, now_ms: int | None = None) -> Verdict:
         reason = ViolationReason.NONE
 
     seconds_past_expiry = 0
-    if client.expiry_time_ms > 0:
-        seconds_past_expiry = max(0, (now_ms - client.expiry_time_ms) // 1000)
+    if client.expiry_time_ms > 0 and now_ms >= client.expiry_time_ms:
+        seconds_past_expiry = (now_ms - client.expiry_time_ms) // 1000
 
     return Verdict(
         email=client.email,
