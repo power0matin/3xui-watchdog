@@ -183,6 +183,12 @@ class Enforcer:
 
     async def _readmit(self, client: ClientState) -> EnforcementResult:
         verdict = evaluate_client(client)
+        if self.config.dry_run:
+            logger.info("[dry-run] would readmit %s (quota/expiry now valid)", client.email)
+            return EnforcementResult(
+                verdict, ActionTaken.DRY_RUN, "would re-enable via 3x-ui REST API"
+            )
+
         if (
             client.inbound_id is None
             or not client.client_id
@@ -219,7 +225,11 @@ class Enforcer:
             return
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("version") != 1 or not isinstance(payload.get("actioned"), dict):
+            if (
+                not isinstance(payload, dict)
+                or payload.get("version") != 1
+                or not isinstance(payload.get("actioned"), dict)
+            ):
                 raise ValueError("unsupported watchdog state format")
             for email, record in payload["actioned"].items():
                 if not isinstance(record, dict):
