@@ -170,6 +170,40 @@ class TestEnforcer(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(panel.restart_calls, 0)
             self.assertFalse(state_file.exists())
 
+    async def test_dry_run_never_readmits_previously_actioned_clients(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_file = Path(temp_dir) / "state.json"
+            active_panel = FakePanel()
+            active = Enforcer(
+                EnforcerConfig(state_file=state_file),  # type: ignore[arg-type]
+                active_panel,
+            )
+            disabled = await active.enforce_cycle([make_client()])
+            self.assertEqual(disabled[0].action, ActionTaken.REST_DISABLE)
+
+            healthy_settings = make_client().client_settings.copy()  # type: ignore[union-attr]
+            healthy_settings["totalGB"] = 1000
+            healthy_settings["enable"] = False
+            healthy = make_client(
+                total=1000,
+                up=120,
+                enable=False,
+                client_settings=healthy_settings,
+            )
+            dry_panel = FakePanel()
+            dry = Enforcer(
+                EnforcerConfig(dry_run=True, state_file=state_file),  # type: ignore[arg-type]
+                dry_panel,
+            )
+
+            results = await dry.enforce_cycle([healthy])
+
+            self.assertEqual(results[0].action, ActionTaken.DRY_RUN)
+            self.assertEqual(dry_panel.enable_calls, [])
+            self.assertEqual(dry_panel.restart_calls, 0)
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertIn("alice@example.test", state["actioned"])
+
     async def test_restart_fallback_is_only_attempted_when_explicitly_enabled(self) -> None:
         panel = FakePanel(disable_ok=False)
         enforcer = Enforcer(
