@@ -266,9 +266,16 @@ setup_venv_and_install() {
 # ---------------------------------------------------------------------------
 setup_config() {
     mkdir -p "$CONFIG_DIR"
+    # The watchdog stores its action-ownership state beside config.yaml.
+    # The service must be able to create/atomically replace that state file.
+    chown "${SERVICE_USER}:${SERVICE_USER}" "$CONFIG_DIR"
+    chmod 750 "$CONFIG_DIR"
+
     local target="${CONFIG_DIR}/config.yaml"
     if [[ -f "$target" && "$FORCE" != true ]]; then
-        log_warn "config.yaml already exists at ${target} — leaving it untouched (use --force to overwrite)"
+        chown "${SERVICE_USER}:${SERVICE_USER}" "$target"
+        chmod 640 "$target"
+        log_warn "config.yaml already exists at ${target} — leaving its contents untouched (use --force to overwrite)"
         return
     fi
     cp "${INSTALL_DIR}/config.example.yaml" "$target"

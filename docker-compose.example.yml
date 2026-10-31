@@ -16,11 +16,16 @@ services:
                            # in their own containers (see README "Docker networking" note)
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      - watchdog-state:/var/lib/3xui-watchdog
     environment:
       # Secrets can also be supplied here instead of in config.yaml:
       - XUIWD_PANEL__PASSWORD=${PANEL_PASSWORD:?set PANEL_PASSWORD in .env}
+      - XUIWD_STATE_FILE=/var/lib/3xui-watchdog/state.json
     healthcheck:
       test: ["CMD", "pgrep", "-f", "xui-watchdog"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  watchdog-state:

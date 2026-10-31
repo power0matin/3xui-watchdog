@@ -119,6 +119,7 @@ async def async_main(cfg: WatchdogConfig) -> int:
         dry_run=cfg.dry_run,
         enable_restart_fallback=cfg.enable_restart_fallback,
         restart_grace_period_seconds=cfg.restart_grace_period_seconds,
+        state_file=cfg.state_file,
     )
     notify_config = NotifyConfig(
         webhook_url=cfg.webhook_url,
