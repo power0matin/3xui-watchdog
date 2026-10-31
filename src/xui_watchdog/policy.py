@@ -1,27 +1,15 @@
-"""Pure, dependency-free policy functions for deciding whether a client is
-depleted (over quota) or expired.
-
-These mirror the logic 3x-ui itself uses internally
-(`total > 0 && (up + down) >= total`, and `expiryTime != 0 && now > expiryTime`),
-but are computed independently here so the watchdog never depends on the
-panel having already noticed. Keeping this file free of I/O makes it trivial
-to unit test exhaustively — every branch below is exercised in
-tests/test_policy.py with no network, no mocks, no fixtures beyond plain data.
-"""
+"""Pure policy functions and normalized 3x-ui client state."""
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class ViolationReason(str, Enum):
-    """Why a client was flagged. Kept as an explicit enum (rather than a
-    bare bool) so downstream logging/notifications can say *why*, and so a
-    client that is both over quota and expired still reports a single,
-    unambiguous primary reason.
-    """
+    """Why a client was flagged."""
 
     NONE = "none"
     TRAFFIC_DEPLETED = "traffic_depleted"
@@ -30,19 +18,16 @@ class ViolationReason(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ClientState:
-    """A snapshot of one client's quota/expiry state, sourced from either
-    the 3x-ui REST API or Xray's gRPC StatsService. Both call sites should
-    normalize into this shape before calling `evaluate_client`.
+    """Snapshot of one panel client.
 
-    Fields intentionally mirror 3x-ui's own client model:
-      - total: traffic quota in bytes. 0 (or negative) means "unlimited".
-      - up / down: bytes transferred in each direction so far.
-      - expiry_time_ms: epoch milliseconds when the client expires.
-        0 means "never expires". 3x-ui stores this in milliseconds, not
-        seconds — a very easy off-by-1000 bug, so it's called out here.
-      - enable: the panel's own enabled/disabled flag for this client.
-        A client explicitly disabled by an admin (not by us) should not be
-        re-flagged as a fresh violation; see `evaluate_client`.
+    `enable` is the client's configured 3x-ui setting, not the separate
+    ClientTraffic.Enable flag. 3x-ui changes the latter when its own quota
+    checker blocks a user; using it as the configured flag would make
+    reconciliation impossible.
+
+    REST updateClient needs the owning inbound, protocol-specific client ID,
+    and the full client object so that the panel can update exactly one
+    client while preserving its credentials and protocol settings.
     """
 
     email: str
@@ -52,6 +37,10 @@ class ClientState:
     down: int
     expiry_time_ms: int
     enable: bool = True
+    inbound_id: int | None = None
+    client_id: str | None = None
+    protocol: str | None = None
+    client_settings: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,23 +60,14 @@ class Verdict:
 
 
 def is_traffic_depleted(total: int, up: int, down: int) -> bool:
-    """total <= 0 means unlimited traffic — never a violation on that basis.
-    Otherwise, a client has depleted their quota once cumulative up+down
-    reaches or exceeds total (matches 3x-ui's own `>=` comparison, not `>`,
-    so behavior is bit-for-bit consistent with what the panel would decide).
-    """
+    """A non-positive total is unlimited; quota is depleted at used >= total."""
     if total <= 0:
         return False
     return (up + down) >= total
 
 
 def is_expired(expiry_time_ms: int, now_ms: int | None = None) -> bool:
-    """expiry_time_ms <= 0 means "never expires". 3x-ui also supports
-    negative expiry values as a "disabled after N days from first use"
-    marker in some client flows; those are intentionally NOT treated as
-    "expired" here since they haven't been resolved to an absolute
-    timestamp yet — resolving that is the panel's job, not the watchdog's.
-    """
+    """A non-positive expiry is unset or unresolved, not an absolute timestamp."""
     if expiry_time_ms <= 0:
         return False
     if now_ms is None:
@@ -96,13 +76,12 @@ def is_expired(expiry_time_ms: int, now_ms: int | None = None) -> bool:
 
 
 def evaluate_client(client: ClientState, now_ms: int | None = None) -> Verdict:
-    """Evaluate a single client and return a Verdict.
+    """Evaluate quota and expiry independently of the panel's enable flag.
 
-    Order of checks: traffic depletion is checked before expiry, so a client
-    that is both over quota and expired is reported with
-    TRAFFIC_DEPLETED as the primary reason (arbitrary but deterministic —
-    callers that need both facts can inspect used_bytes/seconds_past_expiry
-    regardless of which `reason` won).
+    The enforcer decides whether a disabled client is owned by this watchdog
+    before taking action. Keeping policy evaluation independent allows a
+    watchdog-disabled client to be recognized as healthy after its quota or
+    expiry is corrected and then safely readmitted.
     """
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -135,26 +114,21 @@ def evaluate_client(client: ClientState, now_ms: int | None = None) -> Verdict:
 def evaluate_clients(
     clients: list[ClientState], now_ms: int | None = None
 ) -> list[Verdict]:
-    """Convenience batch wrapper. Returns a Verdict per client, including
-    non-violations — filtering is left to the caller (enforcer.py) so this
-    module never has to know about "already actioned this cycle" state.
-    """
+    """Return one deterministic verdict for every client, preserving order."""
     if now_ms is None:
         now_ms = int(time.time() * 1000)
-    return [evaluate_client(c, now_ms) for c in clients]
+    return [evaluate_client(client, now_ms) for client in clients]
 
 
 def should_readmit(
     client: ClientState, was_actioned: bool, now_ms: int | None = None
 ) -> bool:
-    """Decide whether a previously-actioned client should be re-added to the
-    running inbound on the next reconcile pass. True when the client is
-    still `enable`d in the panel (i.e. an admin didn't disable them for an
-    unrelated reason) and no longer violates either check.
+    """Readmit only clients this watchdog previously actioned and now valid.
+
+    The panel's configured `enable` flag may be false because the watchdog
+    itself changed it through updateClient. Ownership is therefore determined
+    by the enforcer's action state, not by that flag.
     """
     if not was_actioned:
         return False
-    if not client.enable:
-        return False
-    verdict = evaluate_client(client, now_ms)
-    return not verdict.is_violation
+    return not evaluate_client(client, now_ms).is_violation
