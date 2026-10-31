@@ -66,8 +66,8 @@ viewing this somewhere that doesn't support Mermaid, see the plain-English
 list of the same flow just below.)*
 
 Every poll cycle, the watchdog independently evaluates each client against
-the same rule 3x-ui itself uses (`total > 0 && used >= total`, or
-`expiryTime != 0 && now > expiryTime`) — it does not wait for the panel to
+the same quota and expiry boundaries used by 3x-ui (`total > 0 && used >= total`,
+or `expiryTime > 0 && expiryTime <= now`) — it does not wait for the panel to
 have already noticed. When a client is over the line, it acts in this order:
 
 1. **Preferred:** call Xray's gRPC `HandlerService.RemoveUser(inboundTag,
@@ -226,14 +226,18 @@ instead (slightly higher latency, but no extra port to expose).
 
 ## Testing
 
-- **Unit tests** (`tests/`) cover the depletion/expiry detection logic in
-  `policy.py` as pure functions — no network, no mocks, run with
-  `pytest tests/ --ignore=tests/integration` or plain
+- **Unit tests** (`tests/`) cover policy boundaries, panel response parsing,
+  protocol-specific client identifiers, serialized `updateClient` requests,
+  enforcer transitions, persistent readmission state, and config paths. HTTP
+  request behavior is tested with `httpx.MockTransport`. Run with
+  `pytest tests/ --ignore=tests/integration` or
   `python -m unittest discover -s tests`.
-- **Integration tests** (`tests/integration/`) spin up a real 3x-ui + Xray
-  instance via `tests/integration/docker-compose.ci.yml` and exercise the
-  REST client end to end. Run locally with
-  `docker compose -f tests/integration/docker-compose.ci.yml up -d --wait`
+- **Integration smoke tests** (`tests/integration/`) start a real 3x-ui + Xray
+  instance via `tests/integration/docker-compose.ci.yml` and currently verify
+  panel login and inbound listing only. They do not yet create a client or
+  perform a real `updateClient` disable/readmission round-trip; that coverage
+  is tracked in [Issue #9](https://github.com/power0matin/3xui-watchdog/issues/9).
+  Run locally with `docker compose -f tests/integration/docker-compose.ci.yml up -d --wait`
   then `pytest tests/integration -m integration`.
 
 ## Known scaffolding gaps
@@ -270,7 +274,7 @@ initial version:
 
 Issues and PRs welcome — see the roadmap above for good starting points.
 Please run `ruff check`, `mypy src`, and the unit tests before opening a PR;
-CI runs all three plus the integration stack.
+CI runs all three plus the 3x-ui login/list smoke-test stack.
 
 ## Scope
 
