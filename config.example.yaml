@@ -8,6 +8,7 @@ once: false                 # true / --once flag = single pass, for cron
 dry_run: false               # true / --dry-run = log actions only, take none
 log_level: INFO
 log_json: false              # true for structured JSON logs (good for log shippers)
+state_file: "state.json"      # relative to this config; persists watchdog-owned actions for safe readmission
 
 panel:
   base_url: "http://127.0.0.1:2053"  # origin only: scheme, host, and port
