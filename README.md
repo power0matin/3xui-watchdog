@@ -14,7 +14,7 @@
 
 ![3xui-watchdog workflow overview](docs/screenshots/workflow-overview.svg)
 
-> This is a workflow illustration based on the documented enforcement order, not a live terminal capture. A real end-to-end demo with an administered 3X-UI/Xray instance remains on the roadmap.
+> The gRPC path requires generated Xray protobuf stubs. Until they are available, the watchdog safely falls back to the REST API. This is a workflow illustration, not a live terminal capture; a real end-to-end demo with an administered 3X-UI/Xray instance remains on the roadmap.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/power0matin/3xui-watchdog/ci.yml?branch=main)](../../actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
