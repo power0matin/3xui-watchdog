@@ -10,7 +10,8 @@ log_level: INFO
 log_json: false              # true for structured JSON logs (good for log shippers)
 
 panel:
-  base_url: "http://127.0.0.1:2053"
+  base_url: "http://127.0.0.1:2053"  # origin only: scheme, host, and port
+  web_base_path: "/"                # exact 3X-UI WebBasePath, e.g. "/your-private-path/"
   # auth_mode: "password" (session-cookie login, works on all tested versions)
   #         or "token"    (static API token, only on panel versions that expose one)
   auth_mode: "password"
