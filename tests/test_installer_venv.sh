@@ -27,7 +27,19 @@ test -x "$healthy/bin/python"
 "$healthy/bin/python" -m pip --version >/dev/null
 test ! -e "$healthy/bin/pip"
 
-# 3. A healthy environment remains usable on a subsequent run.
+# 3. A missing pip module is bootstrapped through ensurepip.
+missing_pip="${tmp_dir}/missing-pip"
+"$python_bin" -m venv "$missing_pip"
+site_packages="$("$missing_pip/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+rm -rf "$site_packages/pip" "$site_packages"/pip-*.dist-info
+if "$missing_pip/bin/python" -m pip --version >/dev/null 2>&1; then
+    printf 'test setup failed: pip module was not removed\n' >&2
+    exit 1
+fi
+ensure_virtualenv "$python_bin" "$missing_pip"
+"$missing_pip/bin/python" -m pip --version >/dev/null
+
+# 4. A healthy environment remains usable on a subsequent run.
 marker="${healthy}/reuse-marker"
 : > "$marker"
 ensure_virtualenv "$python_bin" "$healthy"
