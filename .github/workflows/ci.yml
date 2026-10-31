@@ -54,12 +54,11 @@ jobs:
           push: false
           tags: 3xui-watchdog:ci
 
-  # Integration test against a real 3x-ui + Xray stack. Kept as a separate,
-  # slower job so PR feedback from lint-and-test stays fast. Requires the
-  # docker-compose stack under tests/integration/ (see README "Testing"
-  # section) — bringing a full panel + Xray core up in CI is the only
-  # reliable way to test the gRPC RemoveUser / REST disable paths end to
-  # end rather than just mocking them.
+  # Integration smoke test against a real 3x-ui + Xray stack. Current tests
+  # verify panel authentication and inbound listing only. A real updateClient
+  # disable/readmission round-trip is tracked in issue #9. The serialized
+  # request contract and enforcer lifecycle are covered by unit tests using
+  # MockTransport and test doubles.
   integration:
     needs: lint-and-test
     runs-on: ubuntu-latest
