@@ -12,15 +12,9 @@
 
 > **Official project page:** [matinshahabadi.ir/projects/3xui-watchdog/](https://matinshahabadi.ir/projects/3xui-watchdog/)
 
-<!--
-  docs/screenshots/demo.gif goes here, above the fold. Not included in this
-  scaffold — record a real 15-20s terminal capture (asciinema -> gif, or
-  vhs/termtosvg) showing: client hits quota -> watchdog logs detection
-  within a few seconds -> RemoveUser call -> session actually dies in a
-  live traffic graph or tcpdump. That single artifact does more for star
-  conversion than anything else in this README; see the roadmap below.
--->
-<!-- ![demo](docs/screenshots/demo.gif) -->
+![3xui-watchdog workflow overview](docs/screenshots/workflow-overview.svg)
+
+> This is a workflow illustration based on the documented enforcement order, not a live terminal capture. A real end-to-end demo with an administered 3X-UI/Xray instance remains on the roadmap.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/power0matin/3xui-watchdog/ci.yml?branch=main)](../../actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
