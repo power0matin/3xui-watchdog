@@ -23,6 +23,7 @@ class WatchdogConfig:
     dry_run: bool = False
     log_level: str = "INFO"
     log_json: bool = False
+    state_file: Path | None = None
 
     panel_base_url: str = "http://127.0.0.1:2053"
     panel_web_base_path: str = "/"
@@ -63,12 +64,23 @@ def load_config(path: str | Path | None) -> WatchdogConfig:
             node = node[k]
         return node
 
+    state_file_value = get("state_file", default="state.json")
+    state_file = (
+        Path(str(state_file_value)).expanduser()
+        if state_file_value not in (None, "")
+        else None
+    )
+    if state_file is not None and not state_file.is_absolute():
+        config_dir = Path(path).expanduser().resolve().parent if path is not None else Path.cwd()
+        state_file = config_dir / state_file
+
     cfg = WatchdogConfig(
         poll_interval_seconds=int(get("poll_interval_seconds", default=10)),
         once=bool(get("once", default=False)),
         dry_run=bool(get("dry_run", default=False)),
         log_level=str(get("log_level", default="INFO")),
         log_json=bool(get("log_json", default=False)),
+        state_file=state_file,
         panel_base_url=str(get("panel", "base_url", default="http://127.0.0.1:2053")),
         panel_web_base_path=str(get("panel", "web_base_path", default="/")),
         panel_auth_mode=str(get("panel", "auth_mode", default="password")),
