@@ -74,15 +74,21 @@ have already noticed. When a client is over the line, it acts in this order:
    email)` directly — removes just that one client from the running config
    in-memory, no file rewrite, no core restart, and it drops that client's
    already-alive connection state immediately.
-2. **Fallback A:** if the gRPC API isn't reachable, disable that one client
-   via the 3x-ui REST API instead.
-3. **Fallback B (opt-in, off by default):** trigger a full Xray restart via
-   the panel, only after a configurable grace period. This is the "nuclear
-   option" — it disconnects *every* user on the server — and is clearly
-   labeled as such in logs and notifications.
+2. **Fallback A:** if the watchdog's direct gRPC path isn't available,
+   call 3x-ui's supported `updateClient` REST endpoint with the complete
+   protocol-specific client object. 3x-ui updates its own client/stat records
+   and uses its internal Xray API to remove or add that one user.
+3. **Fallback B (opt-in, off by default):** the watchdog may call the panel's
+   full-restart endpoint only after a configurable grace period. This is the
+   "nuclear option" — it disconnects *every* user on the server.
 
-A config-rewrite-and-restart is never the default path; that's the exact
-failure mode this tool exists to avoid.
+The watchdog never calls its own restart fallback unless explicitly enabled.
+There is an important upstream caveat: 3x-ui's `updateClient` handler can
+schedule an Xray restart itself if its internal Xray API cannot apply the
+single-client change. The REST response does not expose that internal
+`needRestart` state, so the watchdog cannot guarantee a no-restart outcome
+when the panel's own Xray API is unhealthy. Verify the panel's Xray API is
+working before enabling enforcement on a production server.
 
 ## Quick start
 
@@ -205,11 +211,11 @@ lower-latency gRPC path.
 
 **Will re-enabling a client work automatically after I bump their quota or
 extend their expiry?**
-Yes — the watchdog uses `RemoveUser`/disable rather than deleting the client
-from 3x-ui's own database, so the client still exists in the panel. On the
-next reconcile pass, if the client is valid again, the watchdog re-admits
-them automatically (see `policy.should_readmit` / `enforcer.Enforcer._readmit`)
-— no manual restart needed.
+Yes, for clients actioned by the watchdog: it stores an ownership record in
+`state_file`, and on a later poll it re-enables the client through
+`updateClient` once quota/expiry is valid. This does not delete the client
+or reset its usage counters. Keep the state file writable and backed up with
+the config if you need readmission to survive a host rebuild.
 
 **Does it work if the Xray gRPC API port isn't exposed?**
 Yes, it falls back to disabling the client through the 3x-ui REST API
@@ -232,14 +238,12 @@ instead (slightly higher latency, but no extra port to expose).
 Being upfront about what's genuinely finished vs. what's a scaffold in this
 initial version:
 
-- **Xray gRPC protobuf stubs are not vendored.** Xray-core doesn't publish a
-  pip-installable Python gRPC client; generating real stubs requires
-  `grpc_tools.protoc` against Xray-core's own `.proto` sources. The one-time
-  command to generate them is documented at the top of
-  `src/xui_watchdog/xray_grpc_client.py`. Until that's run and the
-  generated `_xray_pb2` package is committed (or generated in CI), the
-  watchdog automatically and safely falls back to the REST API path — it
-  will not silently no-op.
+- **Direct Python Xray gRPC protobuf stubs are not vendored yet.**
+  Xray-core does not publish a pip-installable Python client. Until generated
+  stubs are committed, the watchdog uses the supported 3x-ui REST
+  `updateClient` path for per-client changes. The panel then uses its own
+  Xray API; if that internal API is unavailable, 3x-ui may schedule a full
+  Xray restart (see the fallback caveat above).
 - **Go implementation** (using 3x-ui's own `xray` package directly, which
   already exposes `RemoveUser`/`GetTraffic`/`AddUser`) is on the roadmap
   below but not started in this initial scaffold.
