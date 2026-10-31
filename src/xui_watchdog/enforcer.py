@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .panel_client import PanelClient
 from .policy import ClientState, Verdict, evaluate_client, evaluate_clients, should_readmit
-from .xray_grpc_client import XrayGRPCClient, XrayGRPCUnavailable
+from .xray_grpc_client import XrayGRPCClient
 
 logger = logging.getLogger("xui_watchdog.enforcer")
 
