@@ -141,11 +141,15 @@ class TestShouldReadmit(unittest.TestCase):
         client = make_client(total=100, up=50, down=0)
         self.assertFalse(should_readmit(client, was_actioned=False, now_ms=NOW_MS))
 
-    def test_admin_disabled_client_not_readmitted(self) -> None:
-        # Quota is fine now, but an admin explicitly disabled this client
-        # for an unrelated reason — the watchdog must not override that.
+    def test_watchdog_actioned_client_can_be_readmitted_when_disabled(self) -> None:
+        # The REST enforcement path sets client.enable=false itself. Ownership
+        # is established by was_actioned, not by the panel flag.
         client = make_client(total=100, up=50, down=0, enable=False)
-        self.assertFalse(should_readmit(client, was_actioned=True, now_ms=NOW_MS))
+        self.assertTrue(should_readmit(client, was_actioned=True, now_ms=NOW_MS))
+
+    def test_admin_disabled_client_without_watchdog_action_is_not_readmitted(self) -> None:
+        client = make_client(total=100, up=50, down=0, enable=False)
+        self.assertFalse(should_readmit(client, was_actioned=False, now_ms=NOW_MS))
 
     def test_still_violating_not_readmitted(self) -> None:
         client = make_client(total=100, up=200, down=0)
