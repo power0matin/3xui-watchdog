@@ -38,6 +38,7 @@ _ENDPOINTS_V3 = {
     "update_client": "/panel/api/inbounds/updateClient/{client_uuid}",
     "delete_client": "/panel/api/inbounds/{inbound_id}/delClient/{client_uuid}",
     "get_client_traffic_by_email": "/panel/api/inbounds/getClientTraffics/{email}",
+    "restart": "/panel/api/inbounds/restart",
 }
 
 
@@ -58,6 +59,7 @@ class PanelConfig:
     api_token: str | None = None
     verify_tls: bool = True
     timeout_seconds: float = 10.0
+    web_base_path: str = "/"
 
 
 class PanelClient:
@@ -68,15 +70,32 @@ class PanelClient:
             clients = await panel.list_client_states()
     """
 
-    def __init__(self, config: PanelConfig, endpoints: dict[str, str] | None = None):
+    def __init__(
+        self,
+        config: PanelConfig,
+        endpoints: dict[str, str] | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
         self.config = config
         self._endpoints = endpoints or _ENDPOINTS_V3
         self._client = httpx.AsyncClient(
             base_url=config.base_url.rstrip("/"),
             verify=config.verify_tls,
             timeout=config.timeout_seconds,
+            transport=transport,
         )
         self._authenticated = False
+
+    def _panel_path(self, endpoint: str) -> str:
+        """Prefix an API endpoint with the configured 3x-ui WebBasePath.
+
+        base_url is the origin (scheme, host, and optional port); the
+        private panel path belongs in web_base_path. Keep API URLs
+        root-relative so HTTPX cannot accidentally discard the prefix.
+        """
+        prefix = self.config.web_base_path.strip().strip("/")
+        prefix = f"/{prefix}" if prefix else ""
+        return f"{prefix}/{endpoint.lstrip('/')}"
 
     async def __aenter__(self) -> "PanelClient":
         await self.authenticate()
@@ -104,7 +123,7 @@ class PanelClient:
                     "auth_mode is 'password' but username/password not configured"
                 )
             resp = await self._client.post(
-                self._endpoints["login"],
+                self._panel_path(self._endpoints["login"]),
                 data={"username": self.config.username, "password": self.config.password},
             )
             if resp.status_code != 200:
@@ -126,7 +145,7 @@ class PanelClient:
         matching the shape policy.evaluate_client expects.
         """
         self._ensure_authenticated()
-        resp = await self._client.get(self._endpoints["list_inbounds"])
+        resp = await self._client.get(self._panel_path(self._endpoints["list_inbounds"]))
         body = _safe_json(resp, endpoint="list_inbounds")
         if not body.get("success", False):
             raise PanelAPIError(f"list_inbounds failed: {body.get('msg', 'unknown error')}")
@@ -164,7 +183,9 @@ class PanelClient:
         policy.should_readmit) without needing to recreate it from scratch.
         """
         self._ensure_authenticated()
-        path = self._endpoints["update_client"].format(client_uuid=client_uuid)
+        path = self._panel_path(
+            self._endpoints["update_client"].format(client_uuid=client_uuid)
+        )
         payload: dict[str, Any] = {
             "id": inbound_id,
             "settings": {"clients": [{"id": client_uuid, "email": email, "enable": False}]},
@@ -180,7 +201,9 @@ class PanelClient:
         """Re-admit path used by the reconcile loop once an admin has fixed
         a client's quota/expiry (see policy.should_readmit)."""
         self._ensure_authenticated()
-        path = self._endpoints["update_client"].format(client_uuid=client_uuid)
+        path = self._panel_path(
+            self._endpoints["update_client"].format(client_uuid=client_uuid)
+        )
         payload: dict[str, Any] = {
             "id": inbound_id,
             "settings": {"clients": [{"id": client_uuid, "email": email, "enable": True}]},
@@ -196,7 +219,7 @@ class PanelClient:
         else in this client to keep the blast radius visible in one place.
         """
         self._ensure_authenticated()
-        resp = await self._client.post("/panel/api/inbounds/restart")
+        resp = await self._client.post(self._panel_path(self._endpoints["restart"]))
         body = _safe_json(resp, endpoint="restart_xray")
         return bool(body.get("success", False))
 
