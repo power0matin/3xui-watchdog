@@ -242,14 +242,17 @@ clone_or_update_repo() {
 
 setup_venv_and_install() {
     local venv_dir="${INSTALL_DIR}/venv"
-    if [[ ! -d "$venv_dir" ]]; then
-        log_info "creating virtualenv at ${venv_dir}..."
-        "$PYTHON_BIN" -m venv "$venv_dir"
-    fi
+
+    # Recover stale or partially-created environments before installing.
+    # Always invoke pip as a module: the standalone bin/pip launcher may be
+    # missing even when the virtualenv's pip module is healthy.
+    # shellcheck source=lib/venv.sh
+    source "${INSTALL_DIR}/lib/venv.sh"
+    ensure_virtualenv "$PYTHON_BIN" "$venv_dir" || die "could not create or repair virtualenv at ${venv_dir}"
 
     log_info "installing 3xui-watchdog (+ grpc extras) into the virtualenv..."
-    "${venv_dir}/bin/pip" install --quiet --upgrade pip
-    "${venv_dir}/bin/pip" install --quiet "${INSTALL_DIR}[grpc]"
+    "${venv_dir}/bin/python" -m pip install --quiet --upgrade pip
+    "${venv_dir}/bin/python" -m pip install --quiet "${INSTALL_DIR}[grpc]"
     log_ok "package installed into ${venv_dir}"
 
     # Symlink the entrypoint somewhere on PATH for convenience (systemd unit
