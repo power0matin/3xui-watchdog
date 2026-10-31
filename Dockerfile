@@ -14,6 +14,7 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin/xui-watchdog /usr/local/bin/xui-watchdog
 
 WORKDIR /app
+RUN mkdir -p /var/lib/3xui-watchdog && chown watchdog:watchdog /app /var/lib/3xui-watchdog
 USER watchdog
 
 ENTRYPOINT ["xui-watchdog"]
