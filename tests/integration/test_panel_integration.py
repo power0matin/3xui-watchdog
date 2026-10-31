@@ -1,14 +1,13 @@
-"""End-to-end tests against a real 3x-ui + Xray-core instance (brought up
-by docker-compose.ci.yml in this directory). Marked `integration` so the
-fast `pytest tests/` unit run (no Docker required) never picks these up —
-only the dedicated CI job does, via `pytest tests/integration -m integration`.
+"""Smoke tests against a real 3x-ui + Xray-core instance.
 
-These are scaffolded but intentionally left as a small starting set rather
-than a full suite: exercising the actual RemoveUser/disable/restart paths
-against a live panel needs a per-test-run 3x-ui admin session and at least
-one pre-seeded inbound+client, which is environment setup that belongs to
-whoever wires this into their own CI credentials — see the "Contributing"
-section of the README for the specific `good first issue` tracking this.
+The CI stack is started by docker-compose.ci.yml. These tests currently
+verify only panel authentication and inbound listing; they do not create a
+client or mutate its state through updateClient.
+
+The live disable/readmission round-trip, including checks that unrelated
+clients and usage counters remain unchanged, is tracked in issue #9. The
+request payload and enforcer lifecycle are currently covered by unit tests
+using httpx.MockTransport and test doubles.
 """
 
 from __future__ import annotations
