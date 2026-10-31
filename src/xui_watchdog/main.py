@@ -94,6 +94,7 @@ async def async_main(cfg: WatchdogConfig) -> int:
     panel_config = PanelConfig(
         base_url=cfg.panel_base_url,
         auth_mode=cfg.panel_auth_mode,
+        web_base_path=cfg.panel_web_base_path,
         username=cfg.panel_username,
         password=cfg.panel_password,
         api_token=cfg.panel_api_token,

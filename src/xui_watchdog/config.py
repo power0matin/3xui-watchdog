@@ -25,6 +25,7 @@ class WatchdogConfig:
     log_json: bool = False
 
     panel_base_url: str = "http://127.0.0.1:2053"
+    panel_web_base_path: str = "/"
     panel_auth_mode: str = "password"  # "password" | "token"
     panel_username: str | None = None
     panel_password: str | None = None
@@ -69,6 +70,7 @@ def load_config(path: str | Path | None) -> WatchdogConfig:
         log_level=str(get("log_level", default="INFO")),
         log_json=bool(get("log_json", default=False)),
         panel_base_url=str(get("panel", "base_url", default="http://127.0.0.1:2053")),
+        panel_web_base_path=str(get("panel", "web_base_path", default="/")),
         panel_auth_mode=str(get("panel", "auth_mode", default="password")),
         panel_username=get("panel", "username"),
         panel_password=get("panel", "password"),
