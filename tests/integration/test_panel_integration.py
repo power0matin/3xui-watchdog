@@ -53,7 +53,7 @@ async def test_list_client_states_returns_a_list() -> None:
 
 
 async def _get_xray_uptime(panel: PanelClient) -> int:
-    response = await panel._client.post(panel._panel_path("/panel/api/server/status"))
+    response = await panel._client.post(panel._panel_path("/server/status"))
     response.raise_for_status()
     body = response.json()
     assert body.get("success") is True, body
@@ -184,16 +184,18 @@ async def test_update_client_disable_and_readmit_only_target_client() -> None:
             assert peer_after_enable.enable is True
             assert (peer_after_enable.up, peer_after_enable.down) == peer_usage_before
 
-            # 3x-ui refreshes its cached status periodically. A reset in
-            # process uptime would indicate that the panel fell back to a
-            # full Xray restart instead of applying the individual client
-            # operations through its internal Xray API.
-            await asyncio.sleep(2.5)
-            uptime_after = await _get_xray_uptime(panel)
-            assert uptime_after >= uptime_before, (
-                f"Xray uptime decreased during updateClient round-trip: "
-                f"{uptime_before} -> {uptime_after}"
-            )
+            # 3x-ui refreshes status every two seconds and processes a
+            # deferred full-Xray restart every 30 seconds. Observe the full
+            # restart window and fail immediately if process uptime resets.
+            previous_uptime = uptime_before
+            for _ in range(33):
+                await asyncio.sleep(1)
+                current_uptime = await _get_xray_uptime(panel)
+                assert current_uptime >= previous_uptime, (
+                    "Xray process restarted during updateClient round-trip: "
+                    f"{previous_uptime} -> {current_uptime}"
+                )
+                previous_uptime = current_uptime
         finally:
             if inbound_id is not None:
                 delete_response = await panel._client.post(
