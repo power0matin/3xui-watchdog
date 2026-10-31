@@ -73,9 +73,9 @@ class TestIsExpired(unittest.TestCase):
     def test_past_expiry_is_expired(self) -> None:
         self.assertTrue(is_expired(NOW_MS - 1000, now_ms=NOW_MS))
 
-    def test_exact_now_is_not_yet_expired(self) -> None:
-        # Strict '>' matches the spec's `now > expiryTime`.
-        self.assertFalse(is_expired(NOW_MS, now_ms=NOW_MS))
+    def test_exact_now_is_expired(self) -> None:
+        # Match 3x-ui's disableInvalidClients check: expiry_time <= now.
+        self.assertTrue(is_expired(NOW_MS, now_ms=NOW_MS))
 
     def test_defaults_to_real_clock_when_now_ms_omitted(self) -> None:
         # A client that "expired" in 1970 should register as expired
@@ -114,6 +114,13 @@ class TestEvaluateClient(unittest.TestCase):
     def test_seconds_past_expiry_zero_when_not_expired(self) -> None:
         client = make_client(expiry_time_ms=NOW_MS + 100_000)
         verdict = evaluate_client(client, now_ms=NOW_MS)
+        self.assertEqual(verdict.seconds_past_expiry, 0)
+
+    def test_negative_expiry_does_not_report_time_past_expiry(self) -> None:
+        # Negative values represent a relative expiry that has not resolved yet.
+        client = make_client(expiry_time_ms=-86_400_000)
+        verdict = evaluate_client(client, now_ms=NOW_MS)
+        self.assertEqual(verdict.reason, ViolationReason.NONE)
         self.assertEqual(verdict.seconds_past_expiry, 0)
 
     def test_seconds_past_expiry_zero_when_no_expiry_set(self) -> None:
