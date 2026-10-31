@@ -161,7 +161,8 @@ All keys can also be set via `XUIWD_<SECTION>__<KEY>` environment variables
 | `dry_run` | `false` | Log intended actions, take none; same as `--dry-run` |
 | `log_level` | `INFO` | Standard Python logging levels |
 | `log_json` | `false` | Structured JSON logs, good for log shippers |
-| `panel.base_url` | — | 3x-ui panel URL |
+| `panel.base_url` | — | Panel origin (scheme, hostname, and port; no path) |
+| `panel.web_base_path` | `/` | 3x-ui WebBasePath; use the exact path shown in the panel URL |
 | `panel.auth_mode` | `password` | `password` (session cookie) or `token` (static API token) |
 | `panel.username` / `panel.password` | — | Used when `auth_mode: password` |
 | `panel.api_token` | — | Used when `auth_mode: token` |
