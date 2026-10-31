@@ -1,26 +1,18 @@
-"""Decides and executes the action for each flagged client, in the priority
-order from the spec:
-
-  1. Preferred:   Xray gRPC HandlerService.RemoveUser  (surgical, no restart)
-  2. Fallback A:  3x-ui REST API client disable        (if gRPC unreachable)
-  3. Fallback B:  full Xray restart via the panel       (opt-in, off by default,
-                  "nuclear option" — disconnects every user on the server)
-
-Never falls through to a config-rewrite-and-restart as the default path;
-Fallback B requires explicit config (`enable_restart_fallback: true`) plus
-its own grace period, and is logged distinctly so it's never mistaken for
-routine enforcement in an audit trail.
-"""
+"""Safe per-client enforcement with gRPC and 3x-ui REST fallbacks."""
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from .panel_client import PanelClient
-from .policy import ClientState, Verdict, evaluate_clients, should_readmit
+from .policy import ClientState, Verdict, evaluate_client, evaluate_clients, should_readmit
 from .xray_grpc_client import XrayGRPCClient, XrayGRPCUnavailable
 
 logger = logging.getLogger("xui_watchdog.enforcer")
@@ -48,12 +40,7 @@ class EnforcerConfig:
     dry_run: bool = False
     enable_restart_fallback: bool = False
     restart_grace_period_seconds: int = 120
-    # inbound_id / client_uuid are needed for the REST disable/enable calls
-    # but not for gRPC RemoveUser (which only needs tag + email). The panel
-    # client is expected to supply these via list_client_states() metadata
-    # in a future version; for now the enforcer resolves them via a lookup
-    # map passed in at call time (see `client_meta` in enforce_cycle).
-    client_meta: dict[str, tuple[int, str]] = field(default_factory=dict)  # email -> (inbound_id, client_uuid)
+    state_file: Path | None = None
 
 
 class Enforcer:
@@ -66,55 +53,62 @@ class Enforcer:
         self.config = config
         self.panel = panel
         self.grpc_client = grpc_client
-        # Tracks clients actioned this run so we don't spam RemoveUser calls
-        # or double-log every poll cycle — cleared only when a client is
-        # confirmed readmitted (see reconcile()).
-        self._actioned: dict[str, float] = {}  # email -> epoch seconds actioned
-        self._first_violation_seen: dict[str, float] = {}  # email -> epoch seconds
+        self._actioned: dict[str, float] = {}
+        self._action_sources: dict[str, str] = {}
+        self._first_violation_seen: dict[str, float] = {}
+        self._load_actioned_state()
 
     async def enforce_cycle(self, clients: list[ClientState]) -> list[EnforcementResult]:
-        """One full poll cycle: evaluate every client, act on new violations,
-        skip ones already actioned, and reconcile any that are valid again.
-        """
+        """Evaluate one panel snapshot, enforce new violations, and reconcile."""
         now = time.time()
         verdicts = evaluate_clients(clients)
         results: list[EnforcementResult] = []
-
-        by_email = {c.email: c for c in clients}
+        by_email = {client.email: client for client in clients}
 
         for verdict in verdicts:
+            client = by_email[verdict.email]
             already_actioned = verdict.email in self._actioned
 
+            # A client disabled by an admin must not be re-disabled by the
+            # watchdog. Previously actioned clients are the exception: their
+            # disabled flag may be the result of our own REST action.
+            if not client.enable and not already_actioned:
+                continue
+
             if not verdict.is_violation:
-                if already_actioned:
-                    # Reconcile: client is valid again (quota bumped /
-                    # expiry extended by an admin) — readmit it rather than
-                    # requiring a manual restart.
-                    client = by_email[verdict.email]
-                    if should_readmit(client, was_actioned=True):
-                        result = await self._readmit(client)
-                        results.append(result)
-                        del self._actioned[verdict.email]
-                        self._first_violation_seen.pop(verdict.email, None)
+                if already_actioned and should_readmit(client, was_actioned=True):
+                    # If the prior action was direct gRPC, the panel setting
+                    # should still be enabled. A false value now indicates a
+                    # manual admin disable; never override it.
+                    source = self._action_sources.get(verdict.email, "")
+                    if source == ActionTaken.GRPC_REMOVE_USER.value and not client.enable:
+                        continue
+
+                    result = await self._readmit(client)
+                    results.append(result)
+                    if result.action is ActionTaken.READMITTED:
+                        self._forget_actioned(verdict.email)
                 continue
 
             if already_actioned:
-                # Already handled this violation earlier — don't re-call
-                # RemoveUser/disable every poll interval. This is exactly
-                # the "already disabled but still returned by the API" loop
-                # the spec calls out; we track it ourselves instead of
-                # trusting the panel to have converged yet.
                 continue
 
             self._first_violation_seen.setdefault(verdict.email, now)
-            result = await self._act(verdict)
+            result = await self._act(verdict, client)
             results.append(result)
-            if result.action not in (ActionTaken.FAILED, ActionTaken.NONE):
+
+            if result.action in (
+                ActionTaken.GRPC_REMOVE_USER,
+                ActionTaken.REST_DISABLE,
+                ActionTaken.RESTART_XRAY,
+            ):
                 self._actioned[verdict.email] = now
+                self._action_sources[verdict.email] = result.action.value
+                self._persist_actioned_state()
 
         return results
 
-    async def _act(self, verdict: Verdict) -> EnforcementResult:
+    async def _act(self, verdict: Verdict, client: ClientState) -> EnforcementResult:
         if self.config.dry_run:
             logger.info(
                 "[dry-run] would action %s (reason=%s, used=%d/%d)",
@@ -125,81 +119,153 @@ class Enforcer:
             )
             return EnforcementResult(verdict, ActionTaken.DRY_RUN)
 
-        # Priority 1: direct gRPC RemoveUser.
+        # Priority 1: direct Xray gRPC. Catch transport/RPC exceptions too:
+        # grpc.RpcError is not necessarily XrayGRPCUnavailable.
         if self.grpc_client is not None and self.grpc_client.is_available():
             try:
                 self.grpc_client.remove_user(verdict.inbound_tag, verdict.email)
                 return EnforcementResult(
                     verdict, ActionTaken.GRPC_REMOVE_USER, "removed via Xray gRPC HandlerService"
                 )
-            except XrayGRPCUnavailable as exc:
+            except Exception as exc:  # noqa: BLE001 — always try the REST fallback
                 logger.warning(
-                    "gRPC RemoveUser failed for %s, falling back to REST: %s",
+                    "gRPC RemoveUser failed for %s; trying panel REST fallback: %s",
                     verdict.email,
                     exc,
                 )
 
-        # Priority 2: REST API disable.
-        meta = self.config.client_meta.get(verdict.email)
-        if meta is not None:
-            inbound_id, client_uuid = meta
+        # Priority 2: panel REST updateClient. The panel itself uses its
+        # configured Xray API to remove/add this one user without restarting
+        # the core when that API is healthy.
+        if (
+            client.inbound_id is not None
+            and client.client_id
+            and client.client_settings is not None
+        ):
             try:
-                ok = await self.panel.disable_client(inbound_id, client_uuid, verdict.email)
+                ok = await self.panel.disable_client(
+                    client.inbound_id, client.client_id, client.client_settings
+                )
                 if ok:
                     return EnforcementResult(
-                        verdict, ActionTaken.REST_DISABLE, "disabled via 3x-ui REST API"
+                        verdict, ActionTaken.REST_DISABLE, "disabled via 3x-ui REST updateClient"
                     )
-            except Exception as exc:  # noqa: BLE001 — surfaced via result, not raised
+                rest_detail = "3x-ui REST updateClient returned success=false"
+            except Exception as exc:  # noqa: BLE001 — surfaced in result, not raised
+                rest_detail = f"3x-ui REST updateClient failed: {exc}"
                 logger.error("REST disable failed for %s: %s", verdict.email, exc)
+        else:
+            rest_detail = "REST fallback unavailable: inbound/client metadata is missing"
 
-        # Priority 3 (opt-in only): full Xray restart, after a grace period.
+        # Priority 3: explicitly opt-in full-core restart, never the default.
         if self.config.enable_restart_fallback:
             first_seen = self._first_violation_seen.get(verdict.email, time.time())
             elapsed = time.time() - first_seen
             if elapsed >= self.config.restart_grace_period_seconds:
                 logger.warning(
                     "NUCLEAR OPTION: restarting Xray to enforce %s "
-                    "(gRPC and REST both unavailable, grace period elapsed)",
+                    "(gRPC and REST failed; grace period elapsed)",
                     verdict.email,
                 )
                 try:
-                    await self.panel.restart_xray()
-                    return EnforcementResult(
-                        verdict,
-                        ActionTaken.RESTART_XRAY,
-                        "gRPC and REST fallback both unavailable; full restart triggered",
-                    )
+                    if await self.panel.restart_xray():
+                        return EnforcementResult(
+                            verdict,
+                            ActionTaken.RESTART_XRAY,
+                            "gRPC and REST unavailable; full Xray restart accepted by panel",
+                        )
+                    rest_detail += "; restart endpoint returned success=false"
                 except Exception as exc:  # noqa: BLE001
                     logger.error("restart_xray failed: %s", exc)
+                    rest_detail += f"; restart failed: {exc}"
 
-        return EnforcementResult(
-            verdict, ActionTaken.FAILED, "no enforcement path succeeded this cycle"
-        )
+        return EnforcementResult(verdict, ActionTaken.FAILED, rest_detail)
 
     async def _readmit(self, client: ClientState) -> EnforcementResult:
-        from .policy import evaluate_client
-
         verdict = evaluate_client(client)
-        meta = self.config.client_meta.get(client.email)
+        if (
+            client.inbound_id is None
+            or not client.client_id
+            or client.client_settings is None
+        ):
+            return EnforcementResult(
+                verdict, ActionTaken.FAILED, "readmission unavailable: client metadata is missing"
+            )
 
-        if self.grpc_client is not None and self.grpc_client.is_available():
-            # Real readmission via gRPC needs the client's protocol account
-            # object (VLess/VMess/Trojan), which the watchdog does not
-            # generate — 3x-ui owns credential issuance. In practice this
-            # path re-enables via REST (which the panel then reconciles
-            # into Xray on its own next sync) rather than reconstructing
-            # account details here; see the AddUser docstring in
-            # xray_grpc_client.py.
-            pass
+        try:
+            ok = await self.panel.enable_client(
+                client.inbound_id, client.client_id, client.client_settings
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("readmit failed for %s: %s", client.email, exc)
+            return EnforcementResult(verdict, ActionTaken.FAILED, f"readmit failed: {exc}")
 
-        if meta is not None:
-            inbound_id, client_uuid = meta
-            try:
-                ok = await self.panel.enable_client(inbound_id, client_uuid, client.email)
-                if ok:
-                    logger.info("readmitted %s (quota/expiry now valid)", client.email)
-                    return EnforcementResult(verdict, ActionTaken.READMITTED, "re-enabled via REST API")
-            except Exception as exc:  # noqa: BLE001
-                logger.error("readmit failed for %s: %s", client.email, exc)
+        if ok:
+            logger.info("readmitted %s (quota/expiry now valid)", client.email)
+            return EnforcementResult(verdict, ActionTaken.READMITTED, "re-enabled via 3x-ui REST API")
+        return EnforcementResult(
+            verdict, ActionTaken.FAILED, "3x-ui REST updateClient rejected readmission"
+        )
 
-        return EnforcementResult(verdict, ActionTaken.FAILED, "readmit attempted but no path succeeded")
+    def _forget_actioned(self, email: str) -> None:
+        self._actioned.pop(email, None)
+        self._action_sources.pop(email, None)
+        self._first_violation_seen.pop(email, None)
+        self._persist_actioned_state()
+
+    def _load_actioned_state(self) -> None:
+        path = self.config.state_file
+        if path is None or not path.exists():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("version") != 1 or not isinstance(payload.get("actioned"), dict):
+                raise ValueError("unsupported watchdog state format")
+            for email, record in payload["actioned"].items():
+                if not isinstance(record, dict):
+                    continue
+                timestamp = float(record.get("at", 0))
+                source = str(record.get("source", ""))
+                if email and timestamp > 0:
+                    self._actioned[str(email)] = timestamp
+                    self._action_sources[str(email)] = source
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            # Do not guess ownership of disabled users when state is damaged.
+            logger.error("could not load watchdog action state from %s: %s", path, exc)
+
+    def _persist_actioned_state(self) -> None:
+        path = self.config.state_file
+        if path is None or self.config.dry_run:
+            return
+        payload = {
+            "version": 1,
+            "actioned": {
+                email: {"at": timestamp, "source": self._action_sources.get(email, "")}
+                for email, timestamp in self._actioned.items()
+            },
+        }
+        temporary_path: str | None = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+                temporary_path = handle.name
+            os.chmod(temporary_path, 0o600)
+            os.replace(temporary_path, path)
+        except OSError as exc:
+            logger.error("could not persist watchdog action state to %s: %s", path, exc)
+            if temporary_path is not None:
+                try:
+                    os.unlink(temporary_path)
+                except OSError:
+                    pass
