@@ -129,6 +129,8 @@ cp config.example.yaml config.yaml
 docker run -d --name 3xui-watchdog \
   --network host \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -v 3xui-watchdog-state:/var/lib/3xui-watchdog \
+  -e XUIWD_STATE_FILE=/var/lib/3xui-watchdog/state.json \
   ghcr.io/power0matin/3xui-watchdog:latest
 ```
 
