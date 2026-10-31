@@ -36,6 +36,11 @@ jobs:
       - name: Unit tests (pytest)
         run: pytest -v tests/ --ignore=tests/integration
 
+      - name: Installer shell checks
+        run: |
+          bash -n install.sh
+          bash tests/test_installer_venv.sh
+
   docker-build:
     needs: lint-and-test
     runs-on: ubuntu-latest
